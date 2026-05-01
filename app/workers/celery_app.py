@@ -1,26 +1,20 @@
 """
-Celery Application — Redis Broker Setup
-==========================================
-Configures Celery for background AI task processing.
+Celery Application — Stub for production without Redis/Celery
+=============================================================
+Celery is disabled on Render free tier.
+Background tasks fall back to direct execution.
 """
 
-from celery import Celery
 
-from app.core.config import settings
+class _CeleryStub:
+    """No-op stub when Celery is not available."""
+    def task(self, *args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
 
-celery_app = Celery(
-    "midnight_scholar",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
-)
+    def send_task(self, *args, **kwargs):
+        pass
 
-celery_app.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
-    task_track_started=True,
-    task_acks_late=True,
-    worker_prefetch_multiplier=1,
-)
+
+celery_app = _CeleryStub()
