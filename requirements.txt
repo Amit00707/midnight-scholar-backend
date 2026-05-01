@@ -4,7 +4,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
 python-dotenv==1.0.1
-pydantic==2.9.0
+pydantic==2.11.4
 pydantic-settings==2.5.0
 
 # Auth & Security
@@ -17,7 +17,7 @@ sqlalchemy[asyncio]==2.0.35
 asyncpg==0.30.0
 alembic==1.13.0
 
-# AI (OpenAI direct SDK — lightweight)
+# AI
 openai==1.50.0
 
 # Rate Limiting
@@ -32,5 +32,5 @@ python-multipart==0.0.12
 # WebSockets
 websockets==13.0
 
-# Redis (for rate limiting)
+# Redis
 redis==5.1.0
