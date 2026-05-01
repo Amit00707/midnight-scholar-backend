@@ -1,0 +1,24 @@
+# Midnight Scholar Backend — .gitignore
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment Variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Alembic
+alembic/versions/__pycache__/
