@@ -22,10 +22,36 @@ from app.api.routes_notifications import router as notifications_router
 from app.api.routes_subscription import router as subscription_router
 
 
+from contextlib import asynccontextmanager
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def run_migrations():
+    """Run alembic migrations automatically on startup — no shell needed."""
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("✅ Database migrations applied successfully.")
+    except Exception as e:
+        logger.warning(f"⚠️ Migration warning (non-fatal): {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: run DB migrations. Shutdown: cleanup."""
+    run_migrations()
+    yield
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI-Powered E-Book Library Backend",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS — Allow the Next.js frontend to communicate
