@@ -54,10 +54,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — Allow the Next.js frontend to communicate
+# CORS — Allow all Vercel deployments + localhost
+def is_allowed_origin(origin: str) -> bool:
+    allowed = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
+    if origin in allowed:
+        return True
+    # Allow ALL vercel.app subdomains (preview + production)
+    if origin.endswith(".vercel.app"):
+        return True
+    if origin in ("http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"):
+        return True
+    return False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS.split(","),
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
