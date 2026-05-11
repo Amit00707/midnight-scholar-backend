@@ -4,6 +4,7 @@ Book Routes — /books /books/{id} /search
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
@@ -71,3 +72,47 @@ async def upload_book(
     db.add(book)
     await db.flush()
     return book
+
+
+@router.post("/books/import/openlibrary", response_model=list[BookResponse])
+async def import_from_openlibrary(
+    query: str = Query(..., description="Search query for Open Library"),
+    limit: int = Query(5, ge=1, le=20, description="Max books to import"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import books from Open Library API and store them in the database."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://openlibrary.org/search.json",
+            params={"q": query, "limit": limit}
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to fetch from Open Library API")
+        data = response.json()
+
+    imported_books = []
+    for doc in data.get("docs", []):
+        title = doc.get("title", "Unknown Title")
+        author_names = doc.get("author_name", ["Unknown Author"])
+        author = ", ".join(author_names) if isinstance(author_names, list) else author_names
+        
+        # Open Library provides a cover_i property for internal cover images
+        cover_id = doc.get("cover_i")
+        cover_url = f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg" if cover_id else None
+        
+        # Create book
+        book = Book(
+            title=title,
+            author=author,
+            description=f"Imported from Open Library. First published: {doc.get('first_publish_year', 'Unknown')}",
+            cover_url=cover_url,
+            pdf_s3_key="pending",  # PDFs are not provided by the search API
+            total_pages=doc.get("number_of_pages_median", 0),
+            uploaded_by=user.id,
+        )
+        db.add(book)
+        imported_books.append(book)
+
+    await db.flush()
+    return imported_books
