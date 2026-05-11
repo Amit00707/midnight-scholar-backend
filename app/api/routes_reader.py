@@ -16,8 +16,7 @@ from app.schemas.reader import ProgressUpdate, ProgressResponse, BookmarkCreate,
 router = APIRouter()
 
 
-@router.post("/progress", response_model=ProgressResponse)
-@router.patch("/progress", response_model=ProgressResponse)
+@router.api_route("/progress", methods=["POST", "PATCH"], response_model=ProgressResponse)
 async def update_progress(payload: ProgressUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Update reading progress for a book."""
     result = await db.execute(
