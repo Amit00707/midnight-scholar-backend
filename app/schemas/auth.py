@@ -3,14 +3,15 @@ Auth Schemas — Request/Response Models
 ========================================
 """
 
-from pydantic import BaseModel, EmailStr
+from typing import Literal
 
+from pydantic import BaseModel, EmailStr
 
 class SignupRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
-    role: str = "student"
+    role: Literal["student", "teacher", "admin"] = "student"
 
 
 class LoginRequest(BaseModel):

@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get("/admin/stats")
 async def get_platform_stats(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get platform-wide statistics (admin only)."""
-    if user.role != "admin":
+    if getattr(user.role, "value", user.role) != "admin":
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -36,7 +36,7 @@ async def get_platform_stats(user: User = Depends(get_current_user), db: AsyncSe
 @router.get("/admin/users")
 async def list_all_users(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """List all registered users (admin only)."""
-    if user.role != "admin":
+    if getattr(user.role, "value", user.role) != "admin":
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Admin access required")
 

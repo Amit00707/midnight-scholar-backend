@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "Midnight Scholar"
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,https://midnight-scholar-4ujh2yeev-amitkbkp10-gmailcoms-projects.vercel.app"
 
     class Config:
         env_file = ".env"

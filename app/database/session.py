@@ -7,6 +7,7 @@ is not yet configured correctly.
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from fastapi import HTTPException, status
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,15 @@ def _get_engine():
 
 async def get_db():
     """FastAPI dependency that yields an async database session."""
-    _get_engine()  # ensure engine is initialized
+    try:
+        _get_engine()  # ensure engine is initialized
+    except Exception as e:
+        logger.exception("Database engine initialization failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database is unavailable. Check DATABASE_URL and database connectivity.",
+        ) from e
+
     async with _session_factory() as session:
         try:
             yield session

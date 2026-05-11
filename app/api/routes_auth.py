@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database.session import get_db
-from app.database.models.user import User
+from app.database.models.user import User, UserRole
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
 from app.core.dependencies import get_current_user
 from app.schemas.auth import SignupRequest, LoginRequest, VerifyRequest, TokenResponse, RefreshRequest
@@ -28,18 +28,19 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)):
         name=payload.name,
         email=payload.email,
         hashed_password=hash_password(payload.password),
-        role=payload.role,
+        role=UserRole(payload.role),
     )
     db.add(user)
     await db.flush()
 
-    access_token = create_access_token(data={"sub": str(user.id), "role": user.role})
+    user_role = getattr(user.role, "value", user.role)
+    access_token = create_access_token(data={"sub": str(user.id), "role": user_role})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        role=user.role,
+        role=user_role,
         user_id=user.id,
         name=user.name,
     )
@@ -54,13 +55,14 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    access_token = create_access_token(data={"sub": str(user.id), "role": user.role})
+    user_role = getattr(user.role, "value", user.role)
+    access_token = create_access_token(data={"sub": str(user.id), "role": user_role})
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        role=user.role,
+        role=user_role,
         user_id=user.id,
         name=user.name,
     )
@@ -94,13 +96,14 @@ async def refresh_token(payload: RefreshRequest, db: AsyncSession = Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    new_access = create_access_token(data={"sub": str(user.id), "role": user.role})
+    user_role = getattr(user.role, "value", user.role)
+    new_access = create_access_token(data={"sub": str(user.id), "role": user_role})
     new_refresh = create_refresh_token(data={"sub": str(user.id)})
 
     return TokenResponse(
         access_token=new_access,
         refresh_token=new_refresh,
-        role=user.role,
+        role=user_role,
         user_id=user.id,
         name=user.name,
     )
@@ -109,9 +112,10 @@ async def refresh_token(payload: RefreshRequest, db: AsyncSession = Depends(get_
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get the current authenticated user's profile."""
+    current_role = getattr(current_user.role, "value", current_user.role)
     return {
         "user_id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
-        "role": current_user.role,
+        "role": current_role,
     }

@@ -40,6 +40,7 @@ async def get_current_user(
 
 async def require_role(required_role: str, user: User = Depends(get_current_user)) -> User:
     """Enforce a specific role (student, teacher, admin)."""
-    if user.role != required_role:
+    user_role = getattr(user.role, "value", user.role)
+    if user_role != required_role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires {required_role} role")
     return user
