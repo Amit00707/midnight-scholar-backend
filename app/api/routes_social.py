@@ -51,3 +51,39 @@ async def upvote_comment(comment_id: int, user: User = Depends(get_current_user)
     if comment:
         comment.upvotes += 1
     return {"message": "Upvoted"}
+
+
+@router.get("/feed")
+async def get_social_feed(db: AsyncSession = Depends(get_db)):
+    """Get global community activity (highlights, reading progress)."""
+    from sqlalchemy import select, desc
+    from app.database.models.progress import Highlight
+    from app.database.models.user import User
+
+    # Fetch recent highlights
+    result = await db.execute(
+        select(Highlight, User.name)
+        .join(User, Highlight.user_id == User.id)
+        .order_by(desc(Highlight.created_at))
+        .limit(20)
+    )
+    rows = result.all()
+
+    feed = []
+    for hl, user_name in rows:
+        # In a fully fleshed out app, we would join with the books table
+        # to get the exact title. Since book_id is an Open Library ID,
+        # we will pass the ID and the frontend can fetch the title if needed,
+        # or we can display the ID/placeholder for now.
+        feed.append({
+            "user": user_name,
+            "action": "highlighted a passage",
+            "book": f"Book {hl.book_id}",
+            "time": hl.created_at.isoformat() if hl.created_at else "Recently",
+            "quote": f'"{hl.text_content}"',
+            "created_at": hl.created_at
+        })
+
+    # Sort descending
+    feed.sort(key=lambda x: x["created_at"], reverse=True)
+    return {"feed": feed}

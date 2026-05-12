@@ -5,3 +5,4 @@ from app.database.models.progress import ReadingProgress, Bookmark, Highlight, N
 from app.database.models.social import Comment, PublicNote, Group, GroupMember
 from app.database.models.gamification import Badge, UserBadge, Points, Streak
 from app.database.models.subscription import Plan, UserSubscription, BillingHistory
+from app.database.models.teacher import Classroom, StudentEnrollment, Assignment, Announcement
