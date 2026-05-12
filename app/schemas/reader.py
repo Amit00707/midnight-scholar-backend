@@ -9,13 +9,13 @@ from datetime import datetime
 
 
 class ProgressUpdate(BaseModel):
-    book_id: int
+    book_id: str
     current_page: int
     time_spent_minutes: int = 0
 
 
 class ProgressResponse(BaseModel):
-    book_id: int
+    book_id: str
     current_page: int
     total_pages: int
     percentage: float
@@ -27,19 +27,19 @@ class ProgressResponse(BaseModel):
 
 
 class BookmarkCreate(BaseModel):
-    book_id: int
+    book_id: str
     page_number: int
     label: Optional[str] = None
 
 
 class HighlightCreate(BaseModel):
-    book_id: int
+    book_id: str
     page_number: int
     text_content: str
     color: str = "amber"
 
 
 class NoteCreate(BaseModel):
-    book_id: int
+    book_id: str
     page_number: int
     content: str

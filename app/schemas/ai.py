@@ -8,13 +8,13 @@ from typing import List, Optional
 
 
 class AskRequest(BaseModel):
-    book_id: int
+    book_id: str
     page_number: int
     question: str
 
 
 class SummaryRequest(BaseModel):
-    book_id: int
+    book_id: str
     page_number: int
 
 
@@ -31,7 +31,7 @@ class QuizQuestion(BaseModel):
 
 
 class QuizResponse(BaseModel):
-    book_id: int
+    book_id: str
     questions: List[QuizQuestion]
 
 
@@ -41,7 +41,7 @@ class FlashcardItem(BaseModel):
 
 
 class FlashcardResponse(BaseModel):
-    book_id: int
+    book_id: str
     flashcards: List[FlashcardItem]
 
 

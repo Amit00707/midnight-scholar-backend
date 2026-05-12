@@ -272,7 +272,8 @@ async def get_book_detail(work_id: str) -> dict:
     return {
         "id":          work_id,
         "title":       work.get("title", "Unknown Title"),
-        "authors":     authors,
+        "author":      ", ".join([a.get("name", "") for a in authors]) if authors else "Unknown Author",
+        "authors":     [a.get("name", "") for a in authors],
         "description": desc,
         "subjects":    subjects[:10],
         "category":    subjects[0].title() if subjects else "General",

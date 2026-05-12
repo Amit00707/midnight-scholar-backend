@@ -144,7 +144,87 @@ async def personalized_recommendations(
 
 
 # ============================================================
-# 6. SINGLE BOOK DETAIL
+# 5.5 USER LIBRARY
+# Frontend: Library page
+# Requires: JWT auth
+# ============================================================
+from app.database.session import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.database.models.progress import ReadingProgress
+
+@router.get("/library")
+async def get_library(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    GET /api/books/library
+
+    Returns books the user is currently reading or has saved.
+    Fetches ReadingProgress from DB and merges with Open Library data.
+    """
+    try:
+        # 1. Get user's progress
+        result = await db.execute(
+            select(ReadingProgress).where(ReadingProgress.user_id == current_user.id)
+        )
+        progress_records = result.scalars().all()
+        
+        books = []
+        for p in progress_records:
+            try:
+                # Fetch basic metadata from OL (could be slow for many books, but works for MVP)
+                # We could optimize by using Open Library's bulk API or caching
+                detail = await get_book_detail(p.book_id)
+                books.append({
+                    "id": p.book_id,
+                    "title": detail.get("title", "Unknown Title"),
+                    "author": detail.get("author", "Unknown Author"),
+                    "cover_url": detail.get("cover_url"),
+                    "progress": {
+                        "current_page": p.current_page,
+                        "total_pages": p.total_pages,
+                        "percentage": p.percentage
+                    }
+                })
+            except Exception:
+                # Fallback if OL fails for one book
+                books.append({
+                    "id": p.book_id,
+                    "title": "Unknown Book",
+                    "author": "Unknown Author",
+                })
+        
+        return books
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+# ============================================================
+# 7. CLASSIC BOOKS (Real PDFs)
+# Frontend: Free books section / Dashboard
+# ============================================================
+from app.services.open_library_service import get_classic_books
+
+@router.get("/classics")
+async def classics(
+    search: str = Query("", description="Search term for classic books"),
+    limit:  int = Query(12, ge=1, le=40),
+):
+    """
+    GET /api/books/classics
+    Returns classic books with FREE downloadable PDFs.
+    """
+    try:
+        result = await get_classic_books(search=search, limit=limit)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gutenberg error: {str(e)}")
+
+
+# ============================================================
+# 8. SINGLE BOOK DETAIL
 # Frontend: Book Details page
 # NOTE: Must come AFTER all /books/... named routes
 # ============================================================

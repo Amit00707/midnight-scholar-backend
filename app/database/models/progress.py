@@ -14,7 +14,7 @@ class ReadingProgress(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False, index=True)
+    book_id = Column(String(100), nullable=False, index=True)
     current_page = Column(Integer, default=1)
     total_pages = Column(Integer, default=0)
     percentage = Column(Float, default=0.0)
@@ -27,7 +27,7 @@ class Bookmark(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
+    book_id = Column(String(100), nullable=False, index=True)
     page_number = Column(Integer, nullable=False)
     label = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -38,7 +38,7 @@ class Highlight(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
+    book_id = Column(String(100), nullable=False, index=True)
     page_number = Column(Integer, nullable=False)
     text_content = Column(Text, nullable=False)
     color = Column(String(20), default="amber")
@@ -50,7 +50,7 @@ class Note(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
+    book_id = Column(String(100), nullable=False, index=True)
     page_number = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
