@@ -1,118 +1,166 @@
-"""
-Book Routes — /books /books/{id} /search
-==========================================
-"""
+# ============================================================
+# app/api/routes_books.py
+# Midnight Scholar — All Book API Endpoints
+# Powered by Open Library (Free, No Key Required)
+# ============================================================
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Optional
+from app.services.open_library_service import (
+    search_books,
+    search_by_author,
+    get_books_by_category,
+    get_book_detail,
+    get_trending_books,
+    get_recommended_books,
+)
+from app.core.dependencies import get_current_user  # JWT auth dependency
+from app.schemas.book import RecommendationRequest
 
-from app.database.session import get_db
-from app.database.models.book import Book
-from app.core.dependencies import get_current_user
-from app.database.models.user import User
-from app.schemas.book import BookResponse, BookUploadRequest, BookSearchResult
-
-router = APIRouter()
+router = APIRouter(prefix="/api/books", tags=["Books"])
 
 
-@router.get("/books", response_model=BookSearchResult)
-async def list_books(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-    category: Optional[str] = None,
-    difficulty: Optional[str] = None,
-    q: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
+# ============================================================
+# 1. SEARCH BOOKS
+# Frontend: Smart Search page, Navbar search bar
+# ============================================================
+@router.get("/search")
+async def search(
+    q:     str = Query(..., min_length=1, description="Search title or author"),
+    limit: int = Query(10, ge=1, le=40),
+    page:  int = Query(1, ge=1),
+    lang:  str = Query("eng", description="Language filter"),
 ):
-    """List all books with optional filters and pagination."""
-    query = select(Book)
-    if category:
-        query = query.where(Book.category == category)
-    if difficulty:
-        query = query.where(Book.difficulty == difficulty)
-    if q:
-        query = query.where(Book.title.ilike(f"%{q}%"))
+    """
+    GET /api/books/search?q=atomic+habits&limit=10&page=1
 
-    query = query.offset((page - 1) * per_page).limit(per_page)
-    result = await db.execute(query)
-    books = result.scalars().all()
-
-    return BookSearchResult(books=books, total=len(books), page=page, per_page=per_page)
+    Returns paginated book search results.
+    Used by the Smart Search page and navbar search bar.
+    """
+    try:
+        result = await search_books(query=q, limit=limit, page=page)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
 
 
-@router.get("/books/{book_id}", response_model=BookResponse)
-async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
-    """Get a single book by its ID."""
-    result = await db.execute(select(Book).where(Book.id == book_id))
-    book = result.scalar_one_or_none()
-    if not book:
+# ============================================================
+# 2. BOOKS BY CATEGORY
+# Frontend: Dashboard rows, Book listing filter
+# ============================================================
+@router.get("/category/{category}")
+async def books_by_category(
+    category: str,
+    limit:    int = Query(12, ge=1, le=40),
+    sort:     str = Query("rating", description="rating | new | editions"),
+):
+    """
+    GET /api/books/category/science?limit=12
+
+    Returns books filtered by category.
+    Categories: fiction, science, history, technology,
+                business, self-help, philosophy, mathematics,
+                psychology, biography, economics, art
+    """
+    try:
+        result = await get_books_by_category(
+            category=category,
+            limit=limit,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+
+
+# ============================================================
+# 3. TRENDING BOOKS
+# Frontend: Dashboard Popular Books row, Landing page hero
+# ============================================================
+@router.get("/trending")
+async def trending(
+    limit: int = Query(12, ge=1, le=40),
+):
+    """
+    GET /api/books/trending?limit=12
+
+    Returns currently trending books.
+    Used by: Dashboard Popular Books row, Landing page.
+    """
+    try:
+        result = await get_trending_books(limit=limit)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+
+
+# ============================================================
+# 4. BOOKS BY AUTHOR
+# Frontend: Author Profile page
+# ============================================================
+@router.get("/by-author")
+async def books_by_author(
+    name:  str = Query(..., min_length=1, description="Author name"),
+    limit: int = Query(12, ge=1, le=40),
+):
+    """
+    GET /api/books/by-author?name=James+Clear&limit=12
+
+    Returns all books by a specific author.
+    Used by: Author Profile page.
+    """
+    try:
+        result = await search_by_author(author_name=name, limit=limit)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+
+
+# ============================================================
+# 5. PERSONALIZED RECOMMENDATIONS
+# Frontend: Onboarding Step 3, Dashboard AI Recommended row
+# Requires: JWT auth (user must be logged in)
+# ============================================================
+@router.post("/recommendations")
+async def personalized_recommendations(
+    body:         RecommendationRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    POST /api/books/recommendations
+    Body: { "interests": ["science", "technology", "philosophy"] }
+
+    Returns AI-recommended books based on user interests.
+    Used by: Onboarding Step 3, Dashboard AI Recommended row.
+    Requires: Valid JWT token in Authorization header.
+    """
+    try:
+        result = await get_recommended_books(
+            interests=body.interests,
+            limit=body.limit_per_category * len(body.interests)
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+
+
+# ============================================================
+# 6. SINGLE BOOK DETAIL
+# Frontend: Book Details page
+# NOTE: Must come AFTER all /books/... named routes
+# ============================================================
+@router.get("/{ol_id}")
+async def book_detail(ol_id: str):
+    """
+    GET /api/books/OL82563W
+
+    Returns full details of a single book.
+    ol_id = Open Library Work ID (e.g. OL82563W)
+    Used by: Book Details page.
+    """
+    try:
+        result = await get_book_detail(work_id=ol_id)
+        return result
+    except httpx.HTTPStatusError:
         raise HTTPException(status_code=404, detail="Book not found")
-    return book
-
-
-@router.post("/books", response_model=BookResponse)
-async def upload_book(
-    metadata: BookUploadRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upload a new book (PDF upload handled separately via S3)."""
-    book = Book(
-        title=metadata.title,
-        author=metadata.author,
-        description=metadata.description,
-        difficulty=metadata.difficulty,
-        category=metadata.category,
-        pdf_s3_key="pending",
-        uploaded_by=user.id,
-    )
-    db.add(book)
-    await db.flush()
-    return book
-
-
-@router.post("/books/import/openlibrary", response_model=list[BookResponse])
-async def import_from_openlibrary(
-    query: str = Query(..., description="Search query for Open Library"),
-    limit: int = Query(5, ge=1, le=20, description="Max books to import"),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Import books from Open Library API and store them in the database."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://openlibrary.org/search.json",
-            params={"q": query, "limit": limit}
-        )
-        if response.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to fetch from Open Library API")
-        data = response.json()
-
-    imported_books = []
-    for doc in data.get("docs", []):
-        title = doc.get("title", "Unknown Title")
-        author_names = doc.get("author_name", ["Unknown Author"])
-        author = ", ".join(author_names) if isinstance(author_names, list) else author_names
-        
-        # Open Library provides a cover_i property for internal cover images
-        cover_id = doc.get("cover_i")
-        cover_url = f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg" if cover_id else None
-        
-        # Create book
-        book = Book(
-            title=title,
-            author=author,
-            description=f"Imported from Open Library. First published: {doc.get('first_publish_year', 'Unknown')}",
-            cover_url=cover_url,
-            pdf_s3_key="pending",  # PDFs are not provided by the search API
-            total_pages=doc.get("number_of_pages_median", 0),
-            uploaded_by=user.id,
-        )
-        db.add(book)
-        imported_books.append(book)
-
-    await db.flush()
-    return imported_books
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
