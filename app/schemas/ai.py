@@ -49,3 +49,12 @@ class DoubtResponse(BaseModel):
     answer: str
     source_page: int
     confidence: float
+
+
+class LibraryChatRequest(BaseModel):
+    query: str
+
+
+class LibraryChatResponse(BaseModel):
+    answer: str
+    suggested_books: List[str]

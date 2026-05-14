@@ -4,13 +4,36 @@
 # 100% Free | No API Key | No Card | No Limits
 # ============================================================
 
+from app.core.http_client import async_http_client
+from typing import Optional, Dict
+import time
+import logging
 import httpx
-from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 OPEN_LIBRARY_BASE    = "https://openlibrary.org"
 OPEN_LIBRARY_SEARCH  = "https://openlibrary.org/search.json"
 OPEN_LIBRARY_COVERS  = "https://covers.openlibrary.org/b"
 GUTENDEX_BASE        = "https://gutendex.com/books"
+
+# Simple In-Memory Cache (TTL: 1 Hour)
+_cache: Dict[str, dict] = {}
+CACHE_TTL = 3600  # 1 hour
+
+def get_from_cache(key: str):
+    if key in _cache:
+        entry = _cache[key]
+        if time.time() - entry['timestamp'] < CACHE_TTL:
+            return entry['data']
+        del _cache[key]
+    return None
+
+def set_to_cache(key: str, data: dict):
+    _cache[key] = {
+        'timestamp': time.time(),
+        'data': data
+    }
 
 
 # ─────────────────────────────────────────
@@ -27,8 +50,8 @@ def get_cover_url(cover_id: Optional[int] = None,
         return f"{OPEN_LIBRARY_COVERS}/id/{cover_id}-{size}.jpg"
     if isbn:
         return f"{OPEN_LIBRARY_COVERS}/isbn/{isbn}-{size}.jpg"
-    # Fallback placeholder in amber tone
-    return f"https://placehold.co/200x300/1C1917/D97706?text=No+Cover"
+    # Return None so frontend can use its own beautiful fallback
+    return None
 
 
 # ─────────────────────────────────────────
@@ -65,6 +88,13 @@ def parse_book(item: dict) -> dict:
     reading_minutes = page_count * 2
     reading_hours   = round(reading_minutes / 60, 1)
 
+    # Check for Internet Archive ID (for reading)
+    ia_ids = item.get("ia", [])
+    ia_id  = ia_ids[0] if ia_ids else None
+    
+    # Check if readable
+    has_fulltext = item.get("has_fulltext", False)
+
     return {
         "id":              item.get("key", "").replace("/works/", ""),
         "open_library_id": item.get("key", ""),
@@ -91,6 +121,9 @@ def parse_book(item: dict) -> dict:
                            if item.get("publisher") else "Unknown",
         "rating":          round(item.get("ratings_average", 0), 1),
         "rating_count":    item.get("ratings_count", 0),
+        "ia_id":           ia_id,
+        "pdf_url":         f"https://archive.org/download/{ia_id}/{ia_id}.pdf" if ia_id else None,
+        "has_fulltext":    has_fulltext or bool(ia_id),
         "is_free":         True,   # Open Library = always free
         "is_premium":      False,
     }
@@ -107,28 +140,32 @@ async def search_books(query: str,
     Search by title, author, subject, or ISBN
     GET /api/books/search?q=atomic+habits&limit=12&page=1
     """
-    offset = (page - 1) * limit
+    cache_key = f"search:{query}:{limit}:{page}"
+    cached = get_from_cache(cache_key)
+    if cached: return cached
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            OPEN_LIBRARY_SEARCH,
-            params={
-                "q":      query,
-                "limit":  limit,
-                "offset": offset,
-                "fields": "key,title,author_name,cover_i,isbn,"
-                          "subject,first_publish_year,number_of_pages_median,"
-                          "ratings_average,ratings_count,language,publisher,"
-                          "first_sentence",
-            }
-        )
-        data = response.json()
+    offset = (page - 1) * limit
+    client = await async_http_client.get_client()
+    
+    response = await client.get(
+        OPEN_LIBRARY_SEARCH,
+        params={
+            "q":      query,
+            "limit":  limit,
+            "offset": offset,
+            "fields": "key,title,author_name,cover_i,isbn,"
+                        "subject,first_publish_year,number_of_pages_median,"
+                        "ratings_average,ratings_count,language,publisher,"
+                        "first_sentence,ia,has_fulltext",
+        }
+    )
+    data = response.json()
 
     books      = [parse_book(item) for item in data.get("docs", [])]
     total      = data.get("numFound", 0)
     total_pages = -(-total // limit)  # Ceiling division
 
-    return {
+    result = {
         "results":     books,
         "count":       len(books),
         "total":       total,
@@ -136,6 +173,8 @@ async def search_books(query: str,
         "total_pages": total_pages,
         "query":       query,
     }
+    set_to_cache(cache_key, result)
+    return result
 
 
 # ─────────────────────────────────────────
@@ -170,53 +209,59 @@ async def search_by_author(author_name: str,
 
 # ─────────────────────────────────────────
 # 3. GET BOOKS BY CATEGORY
-# Used by: Dashboard rows, Book listing filter
+# Used by: Dashboard rows, Category pages
 # ─────────────────────────────────────────
-async def get_books_by_category(category: str,
-                                 limit: int = 12) -> dict:
+async def get_books_by_category(category: str, limit: int = 12) -> dict:
     """
-    GET /api/books/category/science?limit=12
-    Categories: fiction, science, history, technology,
-                business, self-help, philosophy, mathematics,
-                psychology, biography
+    GET /api/books/category/{category}
+    Returns books for a specific subject
     """
-    # Map display names to Open Library subject queries
-    category_map = {
-        "fiction":      "fiction",
-        "science":      "science",
-        "history":      "history",
-        "technology":   "computers",
-        "business":     "business & economics",
-        "self-help":    "self-help",
-        "philosophy":   "philosophy",
-        "mathematics":  "mathematics",
-        "psychology":   "psychology",
-        "biography":    "biography",
-        "art":          "art & design",
-        "economics":    "economics",
-    }
-    subject = category_map.get(category.lower(), category)
+    cache_key = f"category:{category}:{limit}"
+    cached = get_from_cache(cache_key)
+    if cached: return cached
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            OPEN_LIBRARY_SEARCH,
-            params={
-                "subject": subject,
-                "limit":   limit,
-                "sort":    "rating desc",
-                "fields":  "key,title,author_name,cover_i,isbn,"
-                           "subject,first_publish_year,number_of_pages_median,"
-                           "ratings_average,ratings_count",
-            }
-        )
-        data = response.json()
+    # Map user-friendly category names to Open Library subjects
+    category_map = {
+        "philosophy": "philosophy",
+        "science": "science",
+        "history": "history",
+        "technology": "computers",
+        "business": "business",
+        "psychology": "psychology",
+        "fantasy": "fantasy",
+        "fiction": "fiction",
+        "biography": "biography",
+        "self-help": "self-help",
+        "social media": "communication",
+        "education": "education",
+        "classroom": "education",
+        "academic": "education"
+    }
+
+    subject = category_map.get(category.lower(), category)
+    client = await async_http_client.get_client()
+    
+    response = await client.get(
+        OPEN_LIBRARY_SEARCH,
+        params={
+            "q":       f"subject:{subject}",
+            "limit":   limit,
+            "sort":    "new",
+            "fields":  "key,title,author_name,cover_i,isbn,"
+                        "subject,first_publish_year,number_of_pages_median,"
+                        "ratings_average,ratings_count,ia,has_fulltext",
+        }
+    )
+    data = response.json()
 
     books = [parse_book(item) for item in data.get("docs", [])]
-    return {
+    result = {
         "results":  books,
         "category": category,
-        "count":    len(books),
+        "total":    data.get("numFound", len(books)),
     }
+    set_to_cache(cache_key, result)
+    return result
 
 
 # ─────────────────────────────────────────
@@ -225,51 +270,126 @@ async def get_books_by_category(category: str,
 # ─────────────────────────────────────────
 async def get_book_detail(work_id: str) -> dict:
     """
-    GET /api/books/OL82563W
-    work_id example: OL82563W (from search results "id" field)
+    GET /api/books/{id}
+    Handles both Open Library IDs (OL...) and Gutendex IDs (numeric)
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # Get work details
-        work_res = await client.get(
-            f"{OPEN_LIBRARY_BASE}/works/{work_id}.json"
+    cache_key = f"book_detail:{work_id}"
+    cached = get_from_cache(cache_key)
+    if cached: return cached
+
+    client = await async_http_client.get_client()
+
+    # 1. Handle Gutendex (Numeric) IDs for real PDFs
+    if work_id.isdigit():
+        try:
+            res = await client.get(f"{GUTENDEX_BASE}/{work_id}")
+            if res.status_code == 200:
+                item = res.json()
+                formats = item.get("formats", {})
+                authors = [a.get("name", "Unknown") for a in item.get("authors", [])]
+                result = {
+                    "id":          work_id,
+                    "title":       item.get("title", "Unknown Title"),
+                    "author":      ", ".join(authors),
+                    "authors":     authors,
+                    "description": f"A classic work from Project Gutenberg. Subjects: {', '.join(item.get('subjects', []))}",
+                    "subjects":    item.get("subjects", [])[:10],
+                    "category":    item.get("subjects", ["Classic"])[0] if item.get("subjects") else "Classic",
+                    "cover_url":   formats.get("image/jpeg", ""),
+                    "cover_url_small": formats.get("image/jpeg", ""),
+                    "pdf_url":     formats.get("application/pdf", ""),
+                    "is_free":     True,
+                    "is_premium":  False,
+                }
+                set_to_cache(cache_key, result)
+                return result
+        except Exception: pass
+
+    # 2. Handle Open Library IDs
+    # Get work details
+    work_res = await client.get(f"{OPEN_LIBRARY_BASE}/works/{work_id}.json")
+    if work_res.status_code != 200:
+        raise Exception(f"Open Library Work not found: {work_id}")
+    work = work_res.json()
+
+    # Get author details
+    author_keys = work.get("authors", [])
+    authors = []
+    for a in author_keys[:2]:
+        author_key = a.get("author", {}).get("key", "")
+        if author_key:
+            try:
+                author_res = await client.get(f"{OPEN_LIBRARY_BASE}{author_key}.json")
+                author_data = author_res.json()
+                authors.append({
+                    "name": author_data.get("name", "Unknown"),
+                    "bio":  author_data.get("bio", {}).get("value", "") if isinstance(author_data.get("bio"), dict) else author_data.get("bio", ""),
+                })
+            except Exception: pass
+
+    # Try to find IA ID and Cover info (Aggressive search)
+    ia_id = None
+    fallback_cover_id = None
+    fallback_isbn = None
+    
+    try:
+        # 1. Search for editions of this work to get more metadata
+        # Open Library search expects the full key for the 'work' parameter
+        work_key = f"/works/{work_id}" if not work_id.startswith("/") else work_id
+        ed_res = await client.get(
+            OPEN_LIBRARY_SEARCH,
+            params={"work": work_key, "limit": 5, "fields": "ia,has_fulltext,cover_i,isbn"}
         )
-        work = work_res.json()
+        if ed_res.status_code == 200:
+            ed_data = ed_res.json()
+            for doc in ed_data.get("docs", []):
+                # Get IA ID if available
+                if not ia_id:
+                    ia_list = doc.get("ia", [])
+                    if ia_list: ia_id = ia_list[0]
+                
+                # Get Cover ID if available
+                if not fallback_cover_id:
+                    fallback_cover_id = doc.get("cover_i")
+                
+                # Get ISBN if available
+                if not fallback_isbn:
+                    isbn_list = doc.get("isbn", [])
+                    if isbn_list: fallback_isbn = isbn_list[0]
+        
+        # 2. If still no info, try searching by title and author
+        if not ia_id or not fallback_cover_id:
+            search_res = await client.get(
+                OPEN_LIBRARY_SEARCH,
+                params={
+                    "title": work.get("title"),
+                    "author": authors[0].get("name") if authors else None,
+                    "limit": 3,
+                    "fields": "ia,has_fulltext,cover_i,isbn"
+                }
+            )
+            if search_res.status_code == 200:
+                search_data = search_res.json()
+                for doc in search_data.get("docs", []):
+                    if not ia_id:
+                        ia_list = doc.get("ia", [])
+                        if ia_list: ia_id = ia_list[0]
+                    
+                    if not fallback_cover_id:
+                        fallback_cover_id = doc.get("cover_i")
+                        
+                    if not fallback_isbn:
+                        isbn_list = doc.get("isbn", [])
+                        if isbn_list: fallback_isbn = isbn_list[0]
+    except Exception: pass
 
-        # Get author details
-        author_keys = work.get("authors", [])
-        authors = []
-        for a in author_keys[:2]:  # Max 2 authors
-            author_key = a.get("author", {}).get("key", "")
-            if author_key:
-                try:
-                    author_res = await client.get(
-                        f"{OPEN_LIBRARY_BASE}{author_key}.json"
-                    )
-                    author_data = author_res.json()
-                    authors.append({
-                        "name": author_data.get("name", "Unknown"),
-                        "bio":  author_data.get("bio", {}).get("value", "")
-                                if isinstance(author_data.get("bio"), dict)
-                                else author_data.get("bio", ""),
-                        "photo_url": f"https://covers.openlibrary.org/a/olid/"
-                                     f"{author_key.replace('/authors/', '')}-L.jpg"
-                    })
-                except Exception:
-                    pass
-
-    # Parse description
     desc = work.get("description", "")
-    if isinstance(desc, dict):
-        desc = desc.get("value", "")
-
-    # Parse subjects
+    if isinstance(desc, dict): desc = desc.get("value", "")
     subjects = work.get("subjects", [])
-
-    # Get covers
     covers   = work.get("covers", [])
     cover_id = covers[0] if covers else None
 
-    return {
+    result = {
         "id":          work_id,
         "title":       work.get("title", "Unknown Title"),
         "author":      ", ".join([a.get("name", "") for a in authors]) if authors else "Unknown Author",
@@ -277,12 +397,17 @@ async def get_book_detail(work_id: str) -> dict:
         "description": desc,
         "subjects":    subjects[:10],
         "category":    subjects[0].title() if subjects else "General",
-        "cover_url":   get_cover_url(cover_id, size="L"),
-        "cover_url_small": get_cover_url(cover_id, size="M"),
-        "created":     work.get("created", {}).get("value", ""),
+        "cover_url":   get_cover_url(cover_id or fallback_cover_id, isbn=fallback_isbn, size="L"),
+        "cover_url_small": get_cover_url(cover_id or fallback_cover_id, isbn=fallback_isbn, size="M"),
+        "ia_id":       ia_id,
+        "pdf_url":     f"https://archive.org/download/{ia_id}/{ia_id}.pdf" if ia_id else None,
+        "has_fulltext": bool(ia_id),
         "is_free":     True,
         "is_premium":  False,
+        "difficulty":  "Advanced" if "science" in str(subjects).lower() else "Intermediate",
     }
+    set_to_cache(cache_key, result)
+    return result
 
 
 # ─────────────────────────────────────────
@@ -294,18 +419,17 @@ async def get_trending_books(limit: int = 12) -> dict:
     GET /api/books/trending
     Returns highly-rated popular books
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         response = await client.get(
             OPEN_LIBRARY_SEARCH,
             params={
-                "q":      "programming",  # broad popular query
-                "sort":   "rating desc",
+                "q":      "first_publish_year:[2010 TO 2024]", 
                 "limit":  limit,
-                "fields": "key,title,author_name,cover_i,isbn,"
-                          "subject,first_publish_year,number_of_pages_median,"
-                          "ratings_average,ratings_count",
+                "fields": "key,title,author_name,cover_i",
             }
         )
+        if response.status_code != 200:
+            return {"results": [], "count": 0}
         data = response.json()
 
     books = [parse_book(item) for item in data.get("docs", [])]
@@ -317,33 +441,81 @@ async def get_trending_books(limit: int = 12) -> dict:
 # Used by: Onboarding Step 3, Dashboard AI row
 # ─────────────────────────────────────────
 async def get_recommended_books(interests: list[str],
-                                 limit: int = 6) -> dict:
+                                 limit: int = 10) -> dict:
     """
     GET /api/books/recommended?interests=science,technology
-    Used after onboarding interest selection
+    Improved with normalization and multi-stage fallback
     """
-    # Build query from user interests
-    query = " OR ".join(interests[:3])  # Max 3 interests combined
+    import random
+    
+    category_map = {
+        "philosophy": "philosophy",
+        "science": "science",
+        "history": "history",
+        "technology": "computers",
+        "business": "business",
+        "psychology": "psychology",
+        "fantasy": "fantasy",
+        "fiction": "fiction",
+        "biography": "biography",
+        "self-help": "self-help",
+        "social media": "communication",
+        "education": "education"
+    }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            OPEN_LIBRARY_SEARCH,
-            params={
-                "subject": interests[0] if interests else "fiction",
-                "sort":    "rating desc",
-                "limit":   limit,
-                "fields":  "key,title,author_name,cover_i,isbn,"
-                           "subject,first_publish_year,number_of_pages_median,"
-                           "ratings_average,ratings_count",
-            }
-        )
-        data = response.json()
+    # Normalize and sample
+    normalized = [category_map.get(i.lower(), i.lower()) for i in interests] if interests else []
+    sampled = random.sample(normalized, min(len(normalized), 3)) if normalized else []
+    
+    # Primary Query: OR search for 3 subjects
+    query = " OR ".join([f'subject:"{s}"' for s in sampled]) if sampled else "subject:classic"
 
-    books = [parse_book(item) for item in data.get("docs", [])]
+    logger.info(f"🔍 Recommendations Query: {query}")
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                OPEN_LIBRARY_SEARCH,
+                params={
+                    "q":       query,
+                    "limit":   limit,
+                    "sort":    "rating", # Try to get better books
+                    "fields":  "key,title,author_name,cover_i,subject,ia,has_fulltext",
+                }
+            )
+            
+            data = response.json()
+            docs = data.get("docs", [])
+
+            # Fallback 1: If OR query failed, try single subjects one by one
+            if not docs and sampled:
+                for s in sampled:
+                    logger.info(f"⚠️ Fallback 1: Trying single subject: {s}")
+                    res = await client.get(
+                        OPEN_LIBRARY_SEARCH,
+                        params={"q": f'subject:"{s}"', "limit": limit, "fields": "key,title,author_name,cover_i"}
+                    )
+                    docs = res.json().get("docs", [])
+                    if docs: break
+
+            # Fallback 2: General high-quality classics
+            if not docs:
+                logger.info("⚠️ Fallback 2: General fiction/classics")
+                res = await client.get(
+                    OPEN_LIBRARY_SEARCH,
+                    params={"q": "subject:classic", "limit": limit, "fields": "key,title,author_name,cover_i"}
+                )
+                docs = res.json().get("docs", [])
+
+    except Exception as e:
+        logger.error(f"❌ Recommendation Error: {e}")
+        return {"results": [], "total": 0, "interests": interests}
+
+    books = [parse_book(item) for item in docs]
     return {
         "results":   books,
         "interests": interests,
-        "count":     len(books),
+        "total":     len(books),
     }
 
 
@@ -406,33 +578,49 @@ async def get_classic_books(search: str = "",
     if search:
         params["search"] = search
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(GUTENDEX_BASE, params=params)
-        data     = response.json()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(GUTENDEX_BASE, params=params)
+            if response.status_code != 200:
+                raise Exception(f"Gutendex returned {response.status_code}")
+            data = response.json()
+    except Exception as e:
+        logger.warning(f"Gutendex failed: {e}. Falling back to Open Library classics.")
+        # Fallback: search Open Library for classic books
+        try:
+            client = await async_http_client.get_client()
+            response = await client.get(
+                OPEN_LIBRARY_SEARCH,
+                params={
+                    "q": f"subject:classic {search}".strip(),
+                    "limit": limit,
+                    "fields": "key,title,author_name,cover_i,isbn,subject,first_publish_year,ia,has_fulltext",
+                }
+            )
+            ol_data = response.json()
+            books = [parse_book(item) for item in ol_data.get("docs", [])]
+            return {"results": books, "count": len(books), "source": "Open Library Classics"}
+        except Exception as e2:
+            logger.error(f"Fallback also failed: {e2}")
+            return {"results": [], "count": 0, "source": "unavailable"}
 
     books = []
     for item in data.get("results", [])[:limit]:
-        # Get PDF download URL
         formats  = item.get("formats", {})
         pdf_url  = formats.get("application/pdf", "")
         epub_url = formats.get("application/epub+zip", "")
-
-        # Get cover
         cover_url = formats.get("image/jpeg", "")
-
-        # Get authors
-        authors = [a.get("name", "Unknown")
-                   for a in item.get("authors", [])]
+        authors = [a.get("name", "Unknown") for a in item.get("authors", [])]
 
         books.append({
             "id":          str(item.get("id")),
             "title":       item.get("title", "Unknown Title"),
             "author":      ", ".join(authors),
             "subjects":    item.get("subjects", [])[:5],
-            "category":    item.get("subjects", ["Classic"])[0]
-                           if item.get("subjects") else "Classic",
+            "category":    item.get("subjects", ["Classic"])[0] if item.get("subjects") else "Classic",
             "cover_url":   cover_url,
-            "pdf_url":     pdf_url,    # Free downloadable PDF
+            "cover_url_small": cover_url,
+            "pdf_url":     pdf_url,
             "epub_url":    epub_url,
             "language":    item.get("languages", ["en"])[0],
             "download_count": item.get("download_count", 0),

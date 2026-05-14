@@ -15,6 +15,22 @@ from app.schemas.social import CommentCreate, NoteCreate, GroupCreate
 router = APIRouter()
 
 
+@router.post("/posts")
+async def create_post(payload: CommentCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Post a thought/revelation to the social feed."""
+    from app.database.models.progress import Highlight
+    # Store as a highlight with book_id = "feed" to represent a general post
+    highlight = Highlight(
+        user_id=user.id,
+        book_id=payload.book_id or "feed",
+        page_number=0,
+        text_content=payload.content,
+    )
+    db.add(highlight)
+    await db.flush()
+    return {"message": "Post created", "id": highlight.id}
+
+
 @router.post("/comments")
 async def create_comment(payload: CommentCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Post a comment on a book."""

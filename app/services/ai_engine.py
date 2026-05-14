@@ -156,6 +156,44 @@ async def generate_flashcards(page_text: str) -> List[Dict]:
         return _mock_flashcards()
 
 
+# ─── Keyword Extraction ──────────────────────────────────────
+async def extract_keywords(page_text: str) -> List[Dict]:
+    """Extract key terms and concepts from page content."""
+    client = _get_client()
+    if not client:
+        return _mock_keywords()
+
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract the most important keywords and concepts from the text.\n\n"
+                        "Rules:\n"
+                        "- Extract 5 to 10 key terms\n"
+                        "- For each term provide a short definition\n"
+                        "- Rate importance from 1 (low) to 5 (high)\n\n"
+                        "Return ONLY a valid JSON array. Each object must have: "
+                        '"term" (string), "definition" (string), "importance" (int 1-5). '
+                        'Example: [{"term": "Photosynthesis", "definition": "Process by which plants convert sunlight to energy", "importance": 5}]'
+                    ),
+                },
+                {"role": "user", "content": page_text[:4000]},
+            ],
+        )
+        content = response.choices[0].message.content.strip()
+        result = _safe_parse_json(content)
+        if isinstance(result, list):
+            return result
+        return _mock_keywords()
+    except Exception as e:
+        logger.error(f"Keyword extraction failed: {e}")
+        return _mock_keywords()
+
+
 # ─── Combined Analysis (Summary + Flashcards) ────────────────
 async def analyze_content(page_text: str) -> Dict:
     """Analyze content and return both a summary and flashcards in one call."""
@@ -238,6 +276,46 @@ async def solve_doubt(question: str, page_text: str) -> Dict:
         return _mock_doubt(question)
 
 
+# ─── Library Chat (Cross-Book Intelligence) ──────────────────
+async def library_chat(query: str, library_context: str) -> Dict:
+    """Answer questions across multiple books in the library."""
+    client = _get_client()
+    if not client:
+        return _mock_library_chat(query)
+
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.4,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are the 'Midnight Scholar Library Assistant'. You help users find information across their entire library.\n\n"
+                        "Rules:\n"
+                        "- Be professional and intellectual\n"
+                        "- Synthesize information from the provided library context\n"
+                        "- If the query is about specific books, refer to them by title\n"
+                        "- If the answer isn't in the context, use your general knowledge but mention it's outside the library scope\n"
+                        "- Return ONLY valid JSON: {\"answer\": \"your detailed answer here\", \"suggested_books\": [\"Title 1\", \"Title 2\"]}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Library Context (Books & Recent Progress):\n{library_context}\n\nUser Question: {query}",
+                },
+            ],
+        )
+        content = response.choices[0].message.content.strip()
+        result = _safe_parse_json(content)
+        if result and "answer" in result:
+            return result
+        return {"answer": content, "suggested_books": []}
+    except Exception as e:
+        logger.error(f"Library chat failed: {e}")
+        return _mock_library_chat(query)
+
+
 # ─── JSON Parser ──────────────────────────────────────────────
 def _safe_parse_json(text: str) -> Optional[any]:
     """Safely parse JSON from LLM output, handling markdown code fences."""
@@ -300,8 +378,25 @@ def _mock_flashcards() -> List[Dict]:
     ]
 
 
+def _mock_keywords() -> List[Dict]:
+    return [
+        {"term": "Spaced Repetition", "definition": "A learning technique that optimizes review intervals based on memory retention.", "importance": 5},
+        {"term": "Active Recall", "definition": "Testing yourself on material rather than passively re-reading it.", "importance": 5},
+        {"term": "Ease Factor", "definition": "A multiplier in SM-2 that adjusts based on how well you remember a card.", "importance": 4},
+        {"term": "Interval", "definition": "The number of days until the next review of a flashcard.", "importance": 4},
+        {"term": "Retention Rate", "definition": "The percentage of reviews where the learner successfully recalls the answer.", "importance": 3},
+    ]
+
+
 def _mock_doubt(question: str) -> Dict:
     return {
         "answer": f"[AI not configured] To answer your question \"{question}\", please configure the OPENAI_API_KEY in your .env file. Visit platform.openai.com to get your API key.",
         "confidence": 0.0,
+    }
+
+
+def _mock_library_chat(query: str) -> Dict:
+    return {
+        "answer": f"[AI not configured] Cross-library intelligence for \"{query}\" requires an OpenAI API key. Once configured, I can analyze your entire collection of books to find connections, summarize themes, and answer complex questions.",
+        "suggested_books": ["The Republic", "Beyond Good and Evil", "Meditations"]
     }

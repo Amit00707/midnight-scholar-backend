@@ -19,6 +19,10 @@ from app.api.routes_admin import router as admin_router
 from app.api.routes_teacher import router as teacher_router
 from app.api.routes_notifications import router as notifications_router
 from app.api.routes_subscription import router as subscription_router
+from app.api.routes_flashcards import router as flashcards_router
+from app.api.routes_proxy import router as proxy_router
+from app.api.routes_websockets import router as ws_router
+
 
 
 from contextlib import asynccontextmanager
@@ -30,13 +34,16 @@ from app.database.session import Base, _get_engine
 logger = logging.getLogger(__name__)
 
 
-def run_migrations():
+async def run_migrations():
     """Run alembic migrations automatically on startup — no shell needed."""
     try:
+        import asyncio
         from alembic.config import Config
         from alembic import command
+        # Alembic's command.upgrade is sync — run in thread pool to avoid blocking event loop
         alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: command.upgrade(alembic_cfg, "head"))
         logger.info("✅ Database migrations applied successfully.")
         return True
     except Exception as e:
@@ -58,9 +65,7 @@ async def ensure_tables_exist():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: run DB migrations. Shutdown: cleanup."""
-    run_migrations()
-    # Always run create_all as a safe idempotent backstop for missing tables.
+    """Startup: ensure DB tables exist. Shutdown: cleanup."""
     await ensure_tables_exist()
     yield
 
@@ -105,6 +110,10 @@ app.include_router(admin_router, prefix="/api", tags=["Admin"])
 app.include_router(teacher_router, prefix="/api", tags=["Teacher"])
 app.include_router(notifications_router, prefix="/api", tags=["Notifications"])
 app.include_router(subscription_router, prefix="/api", tags=["Subscription"])
+app.include_router(flashcards_router, prefix="/api", tags=["Flashcards"])
+app.include_router(proxy_router, prefix="/api", tags=["Proxy"])
+app.include_router(ws_router, prefix="/api", tags=["WebSockets"])
+
 
 
 @app.get("/")

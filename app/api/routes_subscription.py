@@ -12,7 +12,12 @@ from app.database.models.subscription import Plan
 from app.core.dependencies import get_current_user
 from app.database.models.user import User
 
+from pydantic import BaseModel
+
 router = APIRouter()
+
+class CheckoutRequest(BaseModel):
+    plan_id: int
 
 
 @router.get("/plans")
@@ -24,10 +29,14 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/checkout")
-async def create_checkout(plan_id: int, user: User = Depends(get_current_user)):
+async def create_checkout(payload: CheckoutRequest, user: User = Depends(get_current_user)):
     """Create a Stripe checkout session."""
-    # TODO: Integrate Stripe SDK
-    return {"checkout_url": f"https://checkout.stripe.com/pay?plan={plan_id}"}
+    # In a real app, you'd use stripe.checkout.Session.create()
+    # Mocking a success response for the frontend
+    return {
+        "checkout_url": f"https://checkout.stripe.com/pay/mock_{user.id}_{payload.plan_id}",
+        "session_id": f"cs_test_{user.id}"
+    }
 
 
 @router.post("/webhook")
@@ -38,7 +47,7 @@ async def stripe_webhook():
 
 
 @router.post("/cancel")
-async def cancel_subscription(user: User = Depends(get_current_user)):
+async def cancel_subscription(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Cancel the current user's subscription."""
-    # TODO: Update UserSubscription record
+    # Logic to update UserSubscription record would go here
     return {"message": "Subscription cancelled"}

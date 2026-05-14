@@ -33,8 +33,13 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Payments
+    STRIPE_API_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+
     # App
     APP_NAME: str = "Midnight Scholar"
+    FRONTEND_URL: str = "http://localhost:3000"
     CORS_ORIGINS: str = "http://localhost:3000,https://midnight-scholar-4ujh2yeev-amitkbkp10-gmailcoms-projects.vercel.app"
 
     class Config:

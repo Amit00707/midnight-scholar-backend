@@ -7,18 +7,23 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Optional
 import httpx
+import asyncio
+import logging
+from app.services.book_service import (
+    unified_search,
+    unified_books_by_category,
+    unified_get_book_detail,
+)
 from app.services.open_library_service import (
-    search_books,
     search_by_author,
-    get_books_by_category,
-    get_book_detail,
     get_trending_books,
     get_recommended_books,
 )
 from app.core.dependencies import get_current_user  # JWT auth dependency
-from app.schemas.book import RecommendationRequest
+from app.schemas.book import RecommendationRequest, BookDetailResponse
 
 router = APIRouter(prefix="/books", tags=["Books"])
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -35,14 +40,13 @@ async def search(
     """
     GET /api/books/search?q=atomic+habits&limit=10&page=1
 
-    Returns paginated book search results.
-    Used by the Smart Search page and navbar search bar.
+    Returns paginated book search results from multiple sources (OL, IA, arXiv).
     """
     try:
-        result = await search_books(query=q, limit=limit, page=page)
+        result = await unified_search(query=q, limit=limit, page=page)
         return result
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Search error: {str(e)}")
 
 
 # ============================================================
@@ -58,19 +62,17 @@ async def books_by_category(
     """
     GET /api/books/category/science?limit=12
 
-    Returns books filtered by category.
-    Categories: fiction, science, history, technology,
-                business, self-help, philosophy, mathematics,
-                psychology, biography, economics, art
+    Returns books filtered by category using the best available API for that category.
     """
     try:
-        result = await get_books_by_category(
+        result = await unified_books_by_category(
             category=category,
             limit=limit,
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Category fetch error: {str(e)}")
+
 
 
 # ============================================================
@@ -172,13 +174,14 @@ async def get_library(
         )
         progress_records = result.scalars().all()
         
-        books = []
-        for p in progress_records:
+        if not progress_records:
+            return []
+
+        # 2. Fetch all details in parallel
+        async def fetch_item(p):
             try:
-                # Fetch basic metadata from OL (could be slow for many books, but works for MVP)
-                # We could optimize by using Open Library's bulk API or caching
-                detail = await get_book_detail(p.book_id)
-                books.append({
+                detail = await unified_get_book_detail(p.book_id)
+                return {
                     "id": p.book_id,
                     "title": detail.get("title", "Unknown Title"),
                     "author": detail.get("author", "Unknown Author"),
@@ -188,17 +191,26 @@ async def get_library(
                         "total_pages": p.total_pages,
                         "percentage": p.percentage
                     }
-                })
-            except Exception:
-                # Fallback if OL fails for one book
-                books.append({
+                }
+            except Exception as e:
+                logger.error(f"Failed to fetch library detail for {p.book_id}: {e}")
+                return {
                     "id": p.book_id,
                     "title": "Unknown Book",
                     "author": "Unknown Author",
-                })
+                    "progress": {
+                        "current_page": p.current_page,
+                        "total_pages": p.total_pages,
+                        "percentage": p.percentage
+                    }
+                }
+
+        tasks = [fetch_item(p) for p in progress_records]
+        books = await asyncio.gather(*tasks)
         
         return books
     except Exception as e:
+        logger.exception("Error in get_library")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
@@ -229,7 +241,7 @@ async def classics(
 # Frontend: Book Details page
 # NOTE: Must come AFTER all /books/... named routes
 # ============================================================
-@router.get("/{ol_id}")
+@router.get("/{ol_id}", response_model=BookDetailResponse)
 async def book_detail(ol_id: str):
     """
     GET /api/books/OL82563W
@@ -239,9 +251,9 @@ async def book_detail(ol_id: str):
     Used by: Book Details page.
     """
     try:
-        result = await get_book_detail(work_id=ol_id)
+        result = await unified_get_book_detail(book_id=ol_id)
         return result
     except httpx.HTTPStatusError:
         raise HTTPException(status_code=404, detail="Book not found")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Open Library error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Book fetch error: {str(e)}")

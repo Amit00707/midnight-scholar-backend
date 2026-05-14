@@ -37,13 +37,14 @@ async def get_my_badges(user: User = Depends(get_current_user), db: AsyncSession
 async def get_leaderboard(db: AsyncSession = Depends(get_db)):
     """Get the global top 50 scholars by wisdom score."""
     result = await db.execute(
-        select(Points.user_id, func.sum(Points.amount).label("total"))
-        .group_by(Points.user_id)
+        select(Points.user_id, User.name, func.sum(Points.amount).label("total"))
+        .join(User, Points.user_id == User.id)
+        .group_by(Points.user_id, User.name)
         .order_by(func.sum(Points.amount).desc())
         .limit(50)
     )
     rows = result.all()
-    return {"leaderboard": [{"user_id": r[0], "score": r[1]} for r in rows]}
+    return {"leaderboard": [{"user_id": r[0], "name": r[1], "score": r[2]} for r in rows]}
 
 
 @router.get("/streak")

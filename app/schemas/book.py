@@ -20,7 +20,7 @@ class RecommendationRequest(BaseModel):
     interests:          list[str] = Field(
                             ...,
                             min_length=1,
-                            max_length=5,
+                            max_length=15,
                             description="User interest categories from onboarding",
                             example=["science", "technology", "philosophy"]
                         )
@@ -46,6 +46,7 @@ class BookResponse(BaseModel):
     author:         str
     authors:        list[str]       = []
     cover_url:      str
+    cover_url_small: str
     cover_id:       Optional[int]   = None
     isbn:           Optional[str]   = None
     category:       str             = "General"
@@ -60,6 +61,10 @@ class BookResponse(BaseModel):
     edition_count:  int             = 1
     has_ebook:      bool            = False
     preview_url:    Optional[str]   = None
+    ia_id:          Optional[str]   = None
+    pdf_url:        Optional[str]   = None
+    epub_url:       Optional[str]   = None
+    source:         Optional[str]   = None
 
     class Config:
         from_attributes = True

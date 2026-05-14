@@ -8,7 +8,7 @@ from typing import Optional
 
 
 class CommentCreate(BaseModel):
-    book_id: int
+    book_id: Optional[int] = None
     content: str
 
 
