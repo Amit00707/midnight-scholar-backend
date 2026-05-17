@@ -22,6 +22,8 @@ from app.api.routes_subscription import router as subscription_router
 from app.api.routes_flashcards import router as flashcards_router
 from app.api.routes_proxy import router as proxy_router
 from app.api.routes_websockets import router as ws_router
+from app.api.routes_health import router as health_router
+from app.api.routes_analytics import router as analytics_router
 
 
 
@@ -32,6 +34,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database.session import Base, _get_engine
 
 logger = logging.getLogger(__name__)
+
+# Import dependencies for lightweight compatibility endpoint
+from fastapi import Depends
+from app.core.dependencies import get_current_user
+from app.database.models.user import User as DBUser
 
 
 async def run_migrations():
@@ -63,10 +70,22 @@ async def ensure_tables_exist():
         raise
 
 
+async def seed_notification_templates():
+    """Seed default notification templates on startup."""
+    try:
+        from app.services.seed_notifications import seed_templates
+
+        result = await seed_templates()
+        logger.info(f"Notification templates: seeded {result['seeded']}, skipped {result['skipped']}")
+    except Exception as e:
+        logger.warning(f"Failed to seed notification templates: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: ensure DB tables exist. Shutdown: cleanup."""
+    """Startup: ensure DB tables exist and seed templates. Shutdown: cleanup."""
     await ensure_tables_exist()
+    await seed_notification_templates()
     yield
 
 
@@ -100,6 +119,7 @@ cors_config = {
 }
 
 # Register all route modules
+app.include_router(health_router, prefix="/api", tags=["Health"])
 app.include_router(auth_router, prefix="/api", tags=["Auth"])
 app.include_router(ai_router, prefix="/api", tags=["AI Engine"])
 app.include_router(books_router, prefix="/api", tags=["Books"])
@@ -113,12 +133,25 @@ app.include_router(subscription_router, prefix="/api", tags=["Subscription"])
 app.include_router(flashcards_router, prefix="/api", tags=["Flashcards"])
 app.include_router(proxy_router, prefix="/api", tags=["Proxy"])
 app.include_router(ws_router, prefix="/api", tags=["WebSockets"])
+app.include_router(analytics_router, prefix="/api", tags=["Analytics"])
 
 
 
 @app.get("/")
 async def root():
     return {"status": "online", "service": "Midnight Scholar API", "version": "1.0.0"}
+
+
+@app.get("/api/me")
+async def me(current_user: DBUser = Depends(get_current_user)):
+    """Compatibility endpoint for frontend clients expecting `/api/me`."""
+    current_role = getattr(current_user.role, "value", current_user.role)
+    return {
+        "user_id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "role": current_role,
+    }
 
 
 # Wrap the entire ASGI app so CORS headers are preserved on unhandled 500 responses too.

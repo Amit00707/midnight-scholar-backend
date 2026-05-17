@@ -5,10 +5,40 @@ Core business logic for awarding points & checking badge eligibility.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from datetime import datetime, timezone
 
-from app.database.models.gamification import Points, Badge, UserBadge, Streak
+from app.database.models.gamification import Points, Badge, UserBadge, Streak, DailyGoal
+
+
+async def update_daily_goal(db: AsyncSession, user_id: int, type: str, increment: int):
+    """Update the user's daily progress toward their goals."""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Find today's goal for this type
+    result = await db.execute(
+        select(DailyGoal).where(
+            and_(
+                DailyGoal.user_id == user_id,
+                DailyGoal.goal_type == type,
+                DailyGoal.date >= today_start
+            )
+        )
+    )
+    goal = result.scalar_one_or_none()
+
+    if not goal:
+        # Create default goal if not exists
+        goal = DailyGoal(user_id=user_id, goal_type=type, target_value=10 if type == "pages" else 30, current_value=0, is_completed=False)
+        db.add(goal)
+
+    # Fix: Handle None values
+    goal.current_value = (goal.current_value or 0) + increment
+    if goal.current_value >= goal.target_value and not goal.is_completed:
+        goal.is_completed = True
+        # Award bonus points for completion
+        await award_points(db, user_id, 50, f"daily_goal_completed_{type}")
 
 
 async def award_points(db: AsyncSession, user_id: int, amount: int, reason: str):

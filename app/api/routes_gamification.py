@@ -12,7 +12,7 @@ from app.database.models.gamification import Points, Badge, UserBadge, Streak
 from app.database.models.user import User
 from app.core.dependencies import get_current_user
 
-router = APIRouter()
+router = APIRouter(prefix="/gamification", tags=["Gamification"])
 
 
 @router.get("/points")

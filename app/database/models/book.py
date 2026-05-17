@@ -47,3 +47,34 @@ class Tag(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)
+
+
+class BookVersion(Base):
+    """Version history for books - allows admin to track and restore previous versions."""
+    __tablename__ = "book_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    book_id = Column(Integer, ForeignKey("books.id"), nullable=False, index=True)
+    version_num = Column(Integer, nullable=False)
+    title = Column(String(500), nullable=True)
+    author = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    cover_url = Column(String(500), nullable=True)
+    pdf_s3_key = Column(String(500), nullable=True)
+    change_note = Column(Text, nullable=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    """Admin audit trail - logs all admin actions."""
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String(100), nullable=False)
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(String(255), nullable=True)
+    meta_data = Column(Text, nullable=True)  # 'metadata' is reserved in SQLAlchemy
+    ip_address = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

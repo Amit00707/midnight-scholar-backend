@@ -12,6 +12,7 @@ from datetime import datetime
 class FlashcardGenerateRequest(BaseModel):
     book_id: str
     page_number: int
+    context: Optional[str] = None
 
 
 # ─── Manual Creation ─────────────────────────────────────────

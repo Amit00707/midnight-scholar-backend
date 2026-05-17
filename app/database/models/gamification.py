@@ -48,3 +48,15 @@ class Streak(Base):
     longest_streak = Column(Integer, default=0)
     last_activity_date = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
+
+
+class DailyGoal(Base):
+    __tablename__ = "daily_goals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    goal_type = Column(String(50), default="pages")  # "pages" | "minutes"
+    target_value = Column(Integer, default=10)
+    current_value = Column(Integer, default=0)
+    date = Column(DateTime(timezone=True), server_default=func.now())
+    is_completed = Column(Boolean, default=False)

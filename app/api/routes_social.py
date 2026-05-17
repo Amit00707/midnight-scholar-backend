@@ -12,7 +12,7 @@ from app.core.dependencies import get_current_user
 from app.database.models.user import User
 from app.schemas.social import CommentCreate, NoteCreate, GroupCreate
 
-router = APIRouter()
+router = APIRouter(prefix="/social", tags=["Social"])
 
 
 @router.post("/posts")

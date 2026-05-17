@@ -45,8 +45,8 @@ class BookResponse(BaseModel):
     title:          str
     author:         str
     authors:        list[str]       = []
-    cover_url:      str
-    cover_url_small: str
+    cover_url:      Optional[str]   = None
+    cover_url_small: Optional[str]   = None
     cover_id:       Optional[int]   = None
     isbn:           Optional[str]   = None
     category:       str             = "General"

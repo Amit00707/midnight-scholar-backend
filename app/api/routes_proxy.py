@@ -3,7 +3,9 @@
 # Midnight Scholar — PDF Proxy for CORS handling
 # ============================================================
 
-from fastapi import APIRouter, Query, HTTPException
+from app.core.dependencies import get_current_user
+from app.database.models.user import User
+from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 import httpx
 import logging
@@ -12,7 +14,10 @@ router = APIRouter(prefix="/proxy", tags=["Proxy"])
 logger = logging.getLogger(__name__)
 
 @router.get("/pdf")
-async def proxy_pdf(url: str = Query(..., description="The direct URL of the PDF to proxy")):
+async def proxy_pdf(
+    url: str = Query(..., description="The direct URL of the PDF to proxy"),
+    user: User = Depends(get_current_user)
+):
     """
     Proxies a PDF from a remote server to bypass CORS restrictions.
     Used by the frontend PdfViewer.

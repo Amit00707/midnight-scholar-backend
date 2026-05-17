@@ -13,7 +13,7 @@ from app.database.models.user import User
 from app.database.models.teacher import Classroom, StudentEnrollment, Assignment, Announcement
 from app.schemas.teacher import ClassroomCreate, ClassroomResponse, AssignmentCreate, AnnouncementCreate
 
-router = APIRouter()
+router = APIRouter(prefix="/teacher", tags=["Teacher"])
 
 def require_teacher(user: User):
     if getattr(user.role, "value", user.role) != "teacher":

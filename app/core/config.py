@@ -37,6 +37,21 @@ class Settings(BaseSettings):
     STRIPE_API_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
 
+    # Celery & Background Tasks
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+    CELERY_TASK_SERIALIZER: str = "json"
+    CELERY_ACCEPT_CONTENT: str = "json"
+    CELERY_RESULT_EXPIRES: int = 3600
+    CELERY_WORKER_PREFETCH_MULTIPLIER: int = 4
+    CELERY_TASK_TIME_LIMIT: int = 1800
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 1500
+
+    # Notifications (Email & Push)
+    SENDGRID_API_KEY: str = ""
+    SENDGRID_FROM_EMAIL: str = "noreply@midnight-scholar.com"
+    FIREBASE_CREDENTIALS_JSON: str = ""
+
     # App
     APP_NAME: str = "Midnight Scholar"
     FRONTEND_URL: str = "http://localhost:3000"

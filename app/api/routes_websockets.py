@@ -7,7 +7,7 @@ Enables real-time communication for discussion rooms and cross-device sync.
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from app.websockets.chat_handler import manager
 from app.websockets.sync_handler import sync_manager
-from app.core.dependencies import get_current_user_from_token
+from app.core.dependencies import get_current_user
 import logging
 
 logger = logging.getLogger(__name__)

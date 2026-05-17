@@ -31,7 +31,7 @@ from app.schemas.flashcard import (
 from app.services import ai_engine
 from app.services.spaced_repetition import sm2_update, preview_intervals
 
-router = APIRouter()
+router = APIRouter(tags=["Flashcards"])
 
 
 # ─── Helpers ─────────────────────────────────────────────────
@@ -71,6 +71,8 @@ async def generate_flashcards(
 ):
     """Generate AI flashcards from a page and persist them to the user's deck."""
     page_text = f"Content from book {payload.book_id}, page {payload.page_number}."
+    if payload.context:
+        page_text = f"SPECIFIC CONTEXT from page {payload.page_number}: {payload.context}\n\nGeneral context: {page_text}"
 
     # Generate via AI engine
     raw_cards = await ai_engine.generate_flashcards(page_text)

@@ -75,3 +75,7 @@ async def get_db():
 def get_session_factory():
     _get_engine()
     return _session_factory
+
+
+# Expose AsyncSessionLocal for background tasks and workers
+AsyncSessionLocal = lambda: _session_factory()

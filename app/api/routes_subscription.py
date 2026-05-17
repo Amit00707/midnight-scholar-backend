@@ -14,7 +14,7 @@ from app.database.models.user import User
 
 from pydantic import BaseModel
 
-router = APIRouter()
+router = APIRouter(prefix="/subscription", tags=["Subscription"])
 
 class CheckoutRequest(BaseModel):
     plan_id: int

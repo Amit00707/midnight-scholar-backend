@@ -55,3 +55,31 @@ class Note(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class ReadingGaps(Base):
+    """Track skipped pages and weak topics for personalized learning insights."""
+    __tablename__ = "reading_gaps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    book_id = Column(String(100), nullable=False, index=True)
+    skipped_pages = Column(Text, nullable=True)  # JSON array stored as text
+    weak_topics = Column(Text, nullable=True)    # JSON array of detected topics
+    gap_score = Column(Float, default=0.0)       # 0-100, higher = more gaps
+    detected_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RevisionItem(Base):
+    """Smart revision items generated from weak topics, quiz scores, and bookmarks."""
+    __tablename__ = "revision_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    book_id = Column(String(100), nullable=False, index=True)
+    topic = Column(String(255), nullable=False)
+    page_refs = Column(Text, nullable=True)      # JSON array of page numbers
+    priority = Column(Integer, default=1)        # 1=low, 2=medium, 3=high
+    last_revised = Column(DateTime(timezone=True), nullable=True)
+    due_date = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -4,6 +4,7 @@ User Models — User, Role, Session
 """
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 
@@ -28,6 +29,10 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    notifications = relationship("Notification", back_populates="user")
+    notification_preferences = relationship("NotificationPreference", back_populates="user", uselist=False)
 
 
 class UserSession(Base):

@@ -14,7 +14,7 @@ from app.core.security import hash_password, verify_password, create_access_toke
 from app.core.dependencies import get_current_user
 from app.schemas.auth import SignupRequest, LoginRequest, VerifyRequest, TokenResponse, RefreshRequest
 
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["Auth"])
 logger = logging.getLogger(__name__)
 
 

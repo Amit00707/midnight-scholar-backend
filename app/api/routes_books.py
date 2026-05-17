@@ -20,6 +20,7 @@ from app.services.open_library_service import (
     get_recommended_books,
 )
 from app.core.dependencies import get_current_user  # JWT auth dependency
+from app.database.models.user import User
 from app.schemas.book import RecommendationRequest, BookDetailResponse
 
 router = APIRouter(prefix="/books", tags=["Books"])
@@ -241,6 +242,33 @@ async def classics(
 # Frontend: Book Details page
 # NOTE: Must come AFTER all /books/... named routes
 # ============================================================
+from app.services.search_service import search_in_book
+
+@router.get("/{book_id}/search")
+async def search_inside_book(
+    book_id: str,
+    q: str = Query(..., min_length=2),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Search for text inside a specific book's PDF.
+    Returns page-level matches with snippets.
+    """
+    try:
+        book = await unified_get_book_detail(book_id)
+        pdf_url = book.get("pdf_url")
+        if not pdf_url:
+             return {"results": [], "message": "Search unavailable: No PDF found for this book."}
+
+        # For Sprint 1, we pass the URL. fitz.open might need a local file, 
+        # so we'll ensure search_in_book handles downloading.
+        results = await search_in_book(pdf_url, q)
+        return {"results": results, "query": q, "book_id": book_id}
+    except Exception as e:
+        logger.exception(f"In-book search failed for {book_id}")
+        raise HTTPException(status_code=500, detail="In-book search failed")
+
+
 @router.get("/{ol_id}", response_model=BookDetailResponse)
 async def book_detail(ol_id: str):
     """
