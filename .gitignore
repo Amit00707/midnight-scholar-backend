@@ -22,3 +22,13 @@ build/
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Coverage
+.coverage
+coverage.xml
+
+# Temp / misc
+nul
+
+# Uploaded files (runtime data)
+uploads/
